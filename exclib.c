@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <setjmp.h>
-#include <execinfo.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -16,7 +15,7 @@ int __exc_signals[EXC_MAX_EXCEPTIONS];
 
 struct exc_name_data __exclib_exc_names[EXC_PREDEFINED_EXCEPTIONS] = {
     {EXC_NULLPOINTER, "Null Pointer", SIGSEGV},
-    {EXC_OUTOFBOUNDS, "Array Index Out of Bounds", SIGKILL}
+    {EXC_OUTOFBOUNDS, "Array Index Out of Bounds", SIGTERM}
 };
 
 void exclib_print_exception_stack(char *file, char *func, int line)
@@ -158,7 +157,7 @@ void exclib_init_strings()
     // this takes some time but the security is worth it, also the ease of use
     for ( i = 0; i < EXC_MAX_EXCEPTIONS; i++) {
 	__exc_names[i] = 0;
-        __exc_signals[i] = SIGKILL;
+        __exc_signals[i] = SIGTERM;
     }
     // make sure all the exceptions we (the library) export are defined & named
     __exc_initstrings = 1;
@@ -228,7 +227,7 @@ int exclib_clear_exc_frame()
     if ( !es ) {
 	exclib_print_stacktrace("exclib_clear_exc_frame was called but there were no exception frames to clear!",
 			   __FILE__, (char *)__func__, __LINE__);
-	kill(getpid(), SIGKILL);
+	kill(getpid(), SIGTERM);
     }
     if ( es->prev )
 	es->prev->next = NULL;

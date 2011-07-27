@@ -2,7 +2,11 @@
 #define __EXCLIB_H__
 
 #include <setjmp.h>
+#ifdef WIN32
+#include "backtrace.h"
+#else
 #include <execinfo.h>
+#endif
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
@@ -103,7 +107,8 @@ if ( exclib_new_exc_frame(&__exc_statuses[__exc_curidx++], __FILE__, (char *)__f
     exclib_print_stacktrace("Tried to TRY but couldn't create new exception frame", __FILE__, (char *)__func__, __LINE__); \
 EXC_STATUS_LIST->value = sigsetjmp(EXC_STATUS_LIST->buf, 1); \
 EXC_STATUS_LIST->tried = 1;\
-switch( EXC_STATUS_LIST->value ) { case 0:
+switch( EXC_STATUS_LIST->value ) { \
+    case 0:
 
 #define CATCH(x) \
         break; \
