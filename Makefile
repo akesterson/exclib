@@ -1,11 +1,9 @@
 CC=gcc
 LD=gcc
 EXECOBJ=
-OBJECTS=exclib.o exception_test.o backtrace.o
+OBJECTS=exclib.o exception_test.o
 LIBS=
-ifeq "$(OS)" "win32"
-	LIBS=-lbfd -lintl -liberty -imagehlp
-endif
+CFLAGS=
 
 all: exception_test
 

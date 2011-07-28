@@ -25,7 +25,6 @@ int main(void)
 {
     int x = 2;
 
-    exclib_register_signals();
     printf("Stack frames are %d bytes in size\n\n", sizeof(struct exc_status));
 
     TRY {
@@ -50,8 +49,7 @@ int main(void)
 	printf("Using THROW_NONZERO\n");
 	THROW_NONZERO(strcmp("a", "b"), 0, "String Compare Exception");
     } FINALLY {
-	printf("In finally clause.\n");
-	exclib_print_exception_stack(__FILE__, (char *)__func__, __LINE__);
+	exclib_print_exception_stack("In finally clause", __FILE__, (char *)__func__, __LINE__);
     } ETRY;
 
     TRY {
