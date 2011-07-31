@@ -6,20 +6,21 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <sys/types.h>
 
 /*
  * These defines create a primitive sort of exception handling for bare C. Some things of note:
  *
  * 1- There is no dynamic memory allocation, ever, unless we print backtrace (in which case it's not our code doing it, it's execinfo)
- * 2- We work in our own sort of exception context stack (__exc_statuses) to do this; we can only ever have EXC_BT_FRAMES number of frames tracked at any given time. This must be defined at compile time.
+ * 2- We work in our own sort of exception context stack (__exclib_statuses) to do this; we can only ever have EXC_MAX_FRAMES number of frames tracked at any given time. This must be defined at compile time.
  * 3- The benefit of the 2nd point is that we don't do malloc/free in our exception handling, and we can also keep from overwriting the current context within multiple nested TRY/ETRY blocks (and yes I've already tried, just scoping the operators {} does not help)
  * 4- THROW() is smart enough to know when it is being used outside the context of a TRY block, and it will raise its own exception/traceback
  * 5- Uncaught exceptions print a stacktrace; will have file names if debug is compiled and symbols aren't mangled, otherwise addr2line is your friend
  * 6- Uncaught exceptions generate SIGKILL on the current process to help w/ graceful shutdown
- * 7- The current exception frame is always available as EXC_STATUS_LIST, and is of type (struct exc_status)
+ * 7- The current exception frame is always available as EXCLIB_EXCEPTION, and is of type (struct exc_status)
  * 8- All exceptions store a stacktrace at the time their TRY block is encountered, though it is not necessarily printed
- * 9- Each member of the exception stack is currently ~700 bytes, so beware of making EXC_BT_FRAMES too large (the default, 50, is already unimaginably deep and adds ~35kB to your memory usage automatically). Don't be afraid to make EXC_BT_FRAMES smaller; most programs won't need more than 10 or 15, because this only tracks where TRY/THROW have been used, and each TRY/THROW pair use only one entry. Stacktraces aren't stored here, so this doesn't limit the possible size of a stacktrace.
+ * 9- Each member of the exception stack is currently ~700 bytes, so beware of making EXC_MAX_FRAMES too large (the default, 50, is already unimaginably deep and adds ~35kB to your memory usage automatically). Don't be afraid to make EXC_MAX_FRAMES smaller; most programs won't need more than 10 or 15, because this only tracks where TRY/THROW have been used, and each TRY/THROW pair use only one entry. Stacktraces aren't stored here, so this doesn't limit the possible size of a stacktrace.
  * 10- Because this library allows you to name your exceptions, you will automatically use an additional (1 * EXC_MAX_EXCEPTIONS) bytes of memory for the array of character pointers to store linkage to your exception strings, not counting whatever memory is used up by the actual string table for your strings. By default, EXC_MAX_EXCEPTIONS is set to 65535. You should probably leave it there, since you have no way of knowing how many exceptions a dependent library might use (and remember, compiler array bounds checking may not always save you here)... The 64k memory hit is, in this day and age, a pretty small price to pay for the verbosity provided.
  * 11- You get an additional (sizeof(int) * EXC_MAX_EXCEPTIONS) in memory usage from the table of signals to match exceptions. When an uncaught exception rises to the top, it generates a signal action. By default, that signal is SIGKILL, but you can override it in the call to exclib_name_exception.
  * 12- The underlying mechanism behind this is setjmp / longjmp, two "arcane and slightly dangerous" functions. Essentially this is used to treat your *entire* codebase as something we can GOTO between when there's an exception. I don't think it will, but if this does funny things to your code, I'm sorry.
@@ -49,7 +50,7 @@
  * The FINALLY clause is executed after the try block has executed, and after any applicable CATCH/DEFAULT blocks. If present, it will
  * be executed REGARDLESS of which exception was actually caught. This is useful to examine an exception as it passes through
  * without actually handling/modifying it, or to execute some generic action on exception, regardless of what type, but only after
- * specific exceptions have been handled.
+ * specific exceptions have been handled
  *
  * THROW_ZERO is a convenience function to replace blocks like this:
  *
@@ -88,65 +89,73 @@
  *
  */
 
-#ifndef EXC_BT_FRAMES
-#define EXC_BT_FRAMES      50
-#endif // EXC_BT_FRAMES
+#ifndef EXC_STRBUF_SIZE
+#define EXC_STRBUF_SIZE    256
+#endif 
+
+#ifndef EXC_MAX_FRAMES
+#define EXC_MAX_FRAMES      50
+#endif // EXC_MAX_FRAMES
 
 #ifndef EXC_MAX_EXCEPTIONS
-#define EXC_MAX_EXCEPTIONS  65535
+#define EXC_MAX_EXCEPTIONS  4096
 #endif // EXC_MAX_EXCEPTIONS
 
 #define TRY \
-if (__exc_curidx >= EXC_BT_FRAMES) \
+if (__exclib_curidx >= EXC_MAX_FRAMES) \
     exclib_print_exception_stack("No available exception stack context", __FILE__, (char *)__func__, __LINE__); \
-if ( exclib_new_exc_frame(&__exc_statuses[__exc_curidx++], __FILE__, (char *)__func__, __LINE__) != 0) \
+if ( exclib_new_exc_frame(&__exclib_statuses[__exclib_curidx++], __FILE__, (char *)__func__, __LINE__) != 0) \
     exclib_print_exception_stack("Tried to TRY but couldn't create new exception frame", __FILE__, (char *)__func__, __LINE__); \
-EXC_STATUS_LIST->value = setjmp(EXC_STATUS_LIST->buf); \
-EXC_STATUS_LIST->tried = 1;\
-switch( EXC_STATUS_LIST->value ) { \
+EXCLIB_EXCEPTION->value = setjmp(EXCLIB_EXCEPTION->buf); \
+EXCLIB_EXCEPTION->tried = 1;\
+switch( EXCLIB_EXCEPTION->value ) { \
     case 0:
 
 #define CATCH(x) \
         break; \
     case x: \
-        EXC_STATUS_LIST->caught = 1; \
-	EXC_STATUS_LIST->catching = 1;
+        EXCLIB_EXCEPTION->caught = 1; \
+	EXCLIB_EXCEPTION->catching = 1;
 
 #define CATCH_GROUP(x) \
     case x: \
-        EXC_STATUS_LIST->caught = 1; \
-	EXC_STATUS_LIST->catching = 1;
+        EXCLIB_EXCEPTION->caught = 1; \
+	EXCLIB_EXCEPTION->catching = 1;
 
 #define DEFAULT \
         break; \
     default: \
-        EXC_STATUS_LIST->caught = 1; \
-	EXC_STATUS_LIST->catching = 1;
+        EXCLIB_EXCEPTION->caught = 1; \
+	EXCLIB_EXCEPTION->catching = 1;
 
 #define ETRY \
 }; \
 exclib_clear_exc_frame(); \
-__exc_curidx--;
+__exclib_curidx--;
 
 #define FINALLY \
 }; \
-if ( EXC_STATUS_LIST && EXC_STATUS_LIST->caught ) {
+if ( EXCLIB_EXCEPTION && EXCLIB_EXCEPTION->value ) {
 
-#define THROW_NONZERO(x, y, z) int rc = (x); if ( rc != 0 ) THROW(rc + y, z);
+#define THROW_NONZERO(x, y, z) __exclib_rc = (x); if ( __exclib_rc != 0 ) { __exclib_rc += y; THROW(__exclib_rc, z); }
 #define THROW_ZERO(x, y, z) if ( (x) == 0 ) THROW(y, z);
 
 #define THROW(x, y) \
-exclib_prep_throw(x, y, __FILE__, (char *)__func__, __LINE__);	\
-if ( EXC_STATUS_LIST->value > 0 ) { \
-  longjmp(EXC_STATUS_LIST->buf, x); \
-} else { \
-  exclib_print_exception_stack("Uncaught Exception "#x"", __FILE__, (char *)__func__, __LINE__); \
-  exit(x); \
-}
+  THROW_EXPLICIT(x, y, __FILE__, (char *)__func__, __LINE__, 1);
+
+#define THROW_EXPLICIT(x, y, file, func, line, setflag)	\
+  exclib_prep_throw(x, y, file, func, line, setflag);				\
+  if ( EXCLIB_EXCEPTION->thrown > 0 ) {					\
+    longjmp(EXCLIB_EXCEPTION->buf, x);					\
+  } else {								\
+    sprintf((char *)&__exclib_strbuf, "Uncaught exception %d", x);	\
+    exclib_print_exception_stack((char *)&__exclib_strbuf, file, func, line); \
+    exit(x);								\
+  }
 
 #define EXCLIB_TRACE(x) exclib_print_exception_stack(x, __FILE__, (char *)__func__, __LINE__)
 
-struct exc_name_data {
+struct exclib_name_data {
     int exc;
     char *name;
     int signal;
@@ -157,38 +166,36 @@ struct exc_name_data {
 
 #define EXC_PREDEFINED_EXCEPTIONS   2
 
-struct exc_status {
-    struct exc_status *next;
-    struct exc_status *prev;
-    jmp_buf buf;
-    int value;
-    int caught;
-    int tried;
-    int catching;
-    char *file;
-    char *function;
-    int line;
-    char *name;
-    char *description;
-    void *bt_frames[EXC_BT_FRAMES];
-    size_t bt_size;
+struct exclib_status {
+  struct exclib_status *next;
+  struct exclib_status *prev;
+  jmp_buf buf;
+  int value;
+  int caught;
+  int tried;
+  int catching;
+  int thrown;
+  char *file;
+  char *function;
+  int line;
+  char *name;
+  char *description;
 };
 
-extern struct exc_name_data __exclib_exc_names[EXC_PREDEFINED_EXCEPTIONS];
-extern char *__exc_names[EXC_MAX_EXCEPTIONS];
-extern int __exc_signals[EXC_MAX_EXCEPTIONS];
-extern int __exc_curidx;
-struct exc_status __exc_statuses[EXC_BT_FRAMES];
-extern struct exc_status *EXC_STATUS_LIST;
+extern struct exclib_name_data __exclib_exc_names[EXC_PREDEFINED_EXCEPTIONS];
+extern char *__exclib_names[EXC_MAX_EXCEPTIONS];
+extern int __exclib_curidx;
+extern struct exclib_status __exclib_statuses[EXC_MAX_FRAMES];
+extern int __exclib_rc;
+extern struct exclib_status *EXCLIB_EXCEPTION;
+extern char __exclib_strbuf[EXC_STRBUF_SIZE];
 
-extern void exclib_init_strings();
-extern void __exclib_sigsegv_handler(int signal);
-extern void exclib_register_signals(void);
-extern void exclib_prep_throw(int value, char *msg, char *file, char *func, int line);
-extern void exclib_name_exception(int value, char *name, int signal);
-extern void exclib_bulk_name_exceptions(struct exc_name_data *exclib_exc_names, int size);
+extern void exclib_init();
+extern void exclib_prep_throw(int value, char *msg, char *file, char *func, int line, int setflag);
+extern void exclib_name_exception(int value, char *name);
+extern void exclib_bulk_name_exceptions(struct exclib_name_data *exclib_exc_names, int size);
 extern void exclib_print_exception_stack(char *mbuf, char *file, char *func, int line);
-extern int exclib_new_exc_frame(struct exc_status *es, char *file, char *function, int line);
+extern int exclib_new_exc_frame(struct exclib_status *es, char *file, char *function, int line);
 extern int exclib_clear_exc_frame();
 
 #endif // __EXCLIB_H__
