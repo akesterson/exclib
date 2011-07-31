@@ -1,19 +1,23 @@
 CC=gcc
 LD=gcc
 EXECOBJ=
-OBJECTS=exclib.o exception_test.o
+LIBOBJECTS=src/exclib.o
+DEMOS=demo/single.exe demo/twolevel.exe demo/threelevel.exe demo/trypair.exe
+LIBTARGET=lib/libexc.a
 LIBS=
 CFLAGS=
 
-all: exception_test
+all: $(LIBTARGET) $(DEMOS)
+
+demo/%.exe: demo/%.o
+	$(LD) -o $@ $(CFLAGS) -L./lib $< -lexc -ggdb -gstabs
 
 %.o: %.c
-	$(CC) -c -o $@ $(CFLAGS) -rdynamic -ggdb -gstabs $<
+	$(CC) -c -o $@ $(CFLAGS) -ggdb -gstabs -I./include $<
 
-exception_test: $(OBJECTS)
-	$(LD) -o exception_test $(LIBS) $(OBJECTS)
+$(LIBTARGET): $(LIBOBJECTS)
+	ar rcs $(LIBTARGET) $(LIBOBJECTS)
 
 .PHONY: clean
 clean:
-	rm -f *.o
-	rm -f exception_test
+	rm -f demo/*o $(LIBOBJECTS) $(DEMOS) $(LIBTARGET)

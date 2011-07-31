@@ -40,7 +40,8 @@ void exclib_print_exception_stack(char *mbuf, char *file, char *func, int line)
 
     if ( ! cur )
 	fprintf(stderr, "EXCLIB: #0: No exception stack\n");
-    while ( cur != NULL ) {
+    else {
+      while ( cur != NULL ) {
 	memset((char *)&buf, 0, 256);
 	memset((char *)&flagbuf, 0, 256);
 	if ( cur->catching == 1) {
@@ -77,6 +78,7 @@ void exclib_print_exception_stack(char *mbuf, char *file, char *func, int line)
 	fprintf(stderr, "%s", (char *)&buf);
 	idx += 1;
 	cur = cur->prev;
+      }
     }
 }
 
@@ -123,6 +125,7 @@ void exclib_prep_throw(int value, char *msg, char *file, char *func, int line)
 {
     char stbuf[256];
     memset((char *)&stbuf, 0, 256);
+
     if ( EXC_STATUS_LIST && EXC_STATUS_LIST->tried == 1) {
 	sprintf((char *)&stbuf, "Tried to THROW %d but couldn't create new exception frame", value);
 	if ( EXC_STATUS_LIST->catching == 1 && EXC_STATUS_LIST->prev ) {
@@ -131,26 +134,21 @@ void exclib_prep_throw(int value, char *msg, char *file, char *func, int line)
 	    exit(value);
 	  }
 	  memcpy(EXC_STATUS_LIST->buf, EXC_STATUS_LIST->prev->buf, sizeof(jmp_buf));
-        } /*else if ( EXC_STATUS_LIST->catching == 1 && (EXC_STATUS_LIST->prev == NULL) ) {
-	  if ( exclib_new_exc_frame(&__exc_statuses[__exc_curidx++], file, func, line) ) {
-		exclib_print_exception_stack((char *)&stbuf, file, func, line);
-		exit(value);
-	  }
-	  EXCLIB_TRACE("Condition 2");
+        } else if ( EXC_STATUS_LIST->catching == 1 && (EXC_STATUS_LIST->prev == NULL) ) {
 	  exclib_clear_exc_frame();
-	  __exc_curidx--;
-	  } */ else {
+	  return;
+	} else {
 	  if ( exclib_new_exc_frame(EXC_STATUS_LIST, file, func, line) )
 	    exclib_print_exception_stack((char *)&stbuf, file, func, line);
 	}
 	EXC_STATUS_LIST->value = value;
 	EXC_STATUS_LIST->name = __exc_names[value];
 	EXC_STATUS_LIST->description = msg;
-    } else {
-	sprintf((char *)&stbuf, "Tried to THROW Exception %d but had no exception context. (Called outside of TRY block, or thrown while TRY was setting up?)", value);
-	exclib_print_exception_stack((char *)&stbuf, file, func, line);
-	exit(__exc_signals[value]);
+	return;
     }
+    sprintf((char *)&stbuf, "Tried to THROW Exception %d but had no exception context. (Called outside of TRY block, or thrown while TRY was setting up?)", value);
+    exclib_print_exception_stack((char *)&stbuf, file, func, line);
+    exit(__exc_signals[value]);
 }
 
 
@@ -189,7 +187,7 @@ int exclib_clear_exc_frame()
 	exit(1);
     }
     if ( es->prev )
-	es->prev->next = NULL;
+      es->prev->next = NULL;
     if ( es->value && !es->caught ) {
 	// thrown exception was unhandled - do we have anywhere else to go?
         if ( !es->prev ) {
@@ -198,23 +196,24 @@ int exclib_clear_exc_frame()
 	  exit(es->value);
 	  //kill(getpid(), SIGKILL);
 	} else if ( es->tried && es->prev && (es->catching == 0)) {
-	    // copy this exception up into the upper frame and siglongjmp back to that
-	    EXC_STATUS_LIST = es->prev;
-	    EXC_STATUS_LIST->caught = 0;
-	    memcpy(&EXC_STATUS_LIST->bt_frames, &es->bt_frames, (sizeof(void *)*EXC_BT_FRAMES));
-	    EXC_STATUS_LIST->file = es->file;
-	    EXC_STATUS_LIST->function = es->function;
-	    EXC_STATUS_LIST->line = es->line;
-	    EXC_STATUS_LIST->name = es->name;
-	    EXC_STATUS_LIST->description = es->description;
-	    THROW(es->value, es->description);
+	  // copy this exception up into the upper frame and siglongjmp back to that
+	  EXC_STATUS_LIST = es->prev;
+	  EXC_STATUS_LIST->caught = 0;
+	  memcpy(&EXC_STATUS_LIST->bt_frames, &es->bt_frames, (sizeof(void *)*EXC_BT_FRAMES));
+	  EXC_STATUS_LIST->file = es->file;
+	  EXC_STATUS_LIST->function = es->function;
+	  EXC_STATUS_LIST->line = es->line;
+	  EXC_STATUS_LIST->name = es->name;
+	  EXC_STATUS_LIST->description = es->description;
+	  int val = es->value;
+	  memset((void *)es, 0x00, sizeof(struct exc_status));
+	  THROW(val, EXC_STATUS_LIST->description);
 	}
     } else {
+      if ( es->prev) {
 	EXC_STATUS_LIST = es->prev;
-	es->value = 0;
-	es->caught = 0;
-	es->tried = 0;
-	es->catching = 0;
+      }
+      memset((void *)es, 0x00, sizeof(struct exc_status));
     }
 }
 

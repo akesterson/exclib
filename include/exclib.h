@@ -2,14 +2,10 @@
 #define __EXCLIB_H__
 
 #include <setjmp.h>
-#ifdef WIN32
-#include "backtrace.h"
-#else
-#include <execinfo.h>
-#endif
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <sys/types.h>
 
 /*
@@ -134,12 +130,19 @@ __exc_curidx--;
 
 #define FINALLY \
 }; \
-if ( EXC_STATUS_LIST->caught ) {
+if ( EXC_STATUS_LIST && EXC_STATUS_LIST->caught ) {
 
 #define THROW_NONZERO(x, y, z) int rc = (x); if ( rc != 0 ) THROW(rc + y, z);
 #define THROW_ZERO(x, y, z) if ( (x) == 0 ) THROW(y, z);
 
-#define THROW(x, y) exclib_prep_throw(x, y, __FILE__, (char *)__func__, __LINE__); if ( EXC_STATUS_LIST ) { longjmp(EXC_STATUS_LIST->buf, x); } else { exclib_print_exception_stack("Unhandled Exception "#x"", __FILE__, (char *)__func__, __LINE__); };
+#define THROW(x, y) \
+exclib_prep_throw(x, y, __FILE__, (char *)__func__, __LINE__);	\
+if ( EXC_STATUS_LIST->value > 0 ) { \
+  longjmp(EXC_STATUS_LIST->buf, x); \
+} else { \
+  exclib_print_exception_stack("Uncaught Exception "#x"", __FILE__, (char *)__func__, __LINE__); \
+  exit(x); \
+}
 
 #define EXCLIB_TRACE(x) exclib_print_exception_stack(x, __FILE__, (char *)__func__, __LINE__)
 
