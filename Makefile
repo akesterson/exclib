@@ -2,7 +2,7 @@ CC=gcc
 LD=gcc
 EXECOBJ=
 LIBOBJECTS=src/exclib.o
-DEMOS=demo/single.exe demo/twolevel.exe demo/threelevel.exe demo/trypair.exe demo/catchgroup.exe demo/finally.exe demo/default.exe demo/helpers.exe demo/deepuncaught.exe
+DEMOS=demo/single.exe demo/twolevel.exe demo/trypair.exe demo/catchgroup.exe demo/finally.exe demo/default.exe demo/helpers.exe demo/deepuncaught.exe
 LIBTARGET=lib/libexc.a
 LIBS=
 CFLAGS=
@@ -22,6 +22,7 @@ demo: $(DEMOS)
 lib: $(LIBTARGET)
 
 $(LIBTARGET): $(LIBOBJECTS)
+	mkdir -p lib
 	ar rcs $(LIBTARGET) $(LIBOBJECTS)
 
 .PHONY: clean
