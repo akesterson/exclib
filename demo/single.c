@@ -12,8 +12,11 @@ int main(void)
 
   TRY {
     THROW(3, NULL);
+  } CLEANUP {
+  } EXCEPT {
   } CATCH(3) {
-    EXCLIB_TRACE("Caught 3");
+      EXCLIB_TRACE("Caught 3");
+  } FINALLY {
   } ETRY;
 
   EXCLIB_TRACE("Exiting program");

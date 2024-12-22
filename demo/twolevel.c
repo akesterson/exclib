@@ -10,8 +10,11 @@ int main(void)
 {
   TRY {
     THROW(3, NULL);
+  } CLEANUP {
+  } EXCEPT {
   } CATCH(3) {
-    THROW(3, NULL);
+      THROW(3, NULL);
+  } FINALLY {
   } ETRY;
 
   EXCLIB_TRACE("Should never get here");

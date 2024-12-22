@@ -21,7 +21,7 @@ struct exclib_name_data __exclib_exc_names[EXC_PREDEFINED_EXCEPTIONS] = {
 
 void exclib_print_exception_stack(char *mbuf, char *file, char *func, int line)
 {
-    char buf[256];
+    char buf[512];
     char flagbuf[256];
     char *excname = NULL;
     struct exclib_status *cur = EXCLIB_EXCEPTION;
@@ -72,9 +72,9 @@ void exclib_print_exception_stack(char *mbuf, char *file, char *func, int line)
 	else
 	  excname = "NULL";
 	sprintf((char *)&buf,
-		"EXCLIB: #%d[0x%x] %s:%d:%s:%s:%d:%s: %s\n",
+		"EXCLIB: #%d[0x%lx] %s:%d:%s:%s:%d:%s: %s\n",
 		idx,
-		cur,
+		(unsigned long int)cur,
 		cur->file,
 		cur->line,
 		cur->function,
@@ -93,7 +93,7 @@ void exclib_bulk_name_exceptions(struct exclib_name_data *exclib_exc_names, int 
 {
     struct exclib_name_data *ptr;
     int i = 0;
-    //THROW_ZERO(exclib_exc_names, EXC_NULLPOINTER, "Null Pointer");
+    /*THROW_ZERO(exclib_exc_names, EXC_NULLPOINTER, "Null Pointer");*/
     ptr = exclib_exc_names;
     for ( i = 0; i < size ; i++) {
 	exclib_name_exception(ptr->exc, ptr->name);
@@ -113,7 +113,7 @@ void exclib_init()
     return;
   __exclib_inited = 1;
   memset(&__exclib_statuses, 0x00, sizeof(struct exclib_status) * EXC_MAX_FRAMES);
-  // for whatever reason memset isn't safe here, so ...
+  /* for whatever reason memset isn't safe here, so ... */
   for ( i = 0 ; i < EXC_MAX_EXCEPTIONS; i++ ) {
     __exclib_names[i] = NULL;
   }
@@ -123,29 +123,29 @@ void exclib_init()
 void exclib_prep_throw(int value, char *msg, char *file, char *func, int line, int setflag)
 {
     if ( EXCLIB_EXCEPTION && EXCLIB_EXCEPTION->tried == 1) {
-	sprintf((char *)&__exclib_strbuf, "Tried to THROW %d but couldn't create new exception frame", value);
-	if ( EXCLIB_EXCEPTION->catching == 1 && EXCLIB_EXCEPTION->prev ) {
-	  if ( exclib_new_exc_frame(EXCLIB_EXCEPTION, file, func, line) ) {
-	    exclib_print_exception_stack((char *)&__exclib_strbuf, file, func, line);
-	    exit(value);
-	  }
-	  memcpy(EXCLIB_EXCEPTION->buf, EXCLIB_EXCEPTION->prev->buf, sizeof(jmp_buf));
-	  if ( setflag )
-	    EXCLIB_EXCEPTION->thrown = 1;
-        } else if ( EXCLIB_EXCEPTION->catching == 1 && (EXCLIB_EXCEPTION->prev == NULL) ) {
-	  exclib_clear_exc_frame();
-	} else {
-	  if ( exclib_new_exc_frame(EXCLIB_EXCEPTION, file, func, line) )
-	    exclib_print_exception_stack((char *)&__exclib_strbuf, file, func, line);
-	  if ( setflag )
-	    EXCLIB_EXCEPTION->thrown = 1;
-	}
-	if ( setflag ) {
-	  EXCLIB_EXCEPTION->value = value;
-	  EXCLIB_EXCEPTION->name = __exclib_names[value];
-	  EXCLIB_EXCEPTION->description = msg;
-	}
-	return;
+		sprintf((char *)&__exclib_strbuf, "Tried to THROW %d but couldn't create new exception frame", value);
+		if ( EXCLIB_EXCEPTION->catching == 1 && EXCLIB_EXCEPTION->prev ) {
+			if ( exclib_new_exc_frame(EXCLIB_EXCEPTION, file, func, line) ) {
+				exclib_print_exception_stack((char *)&__exclib_strbuf, file, func, line);
+				exit(value);
+			}
+			memcpy(EXCLIB_EXCEPTION->buf, EXCLIB_EXCEPTION->prev->buf, sizeof(jmp_buf));
+			if ( setflag )
+				EXCLIB_EXCEPTION->thrown = 1;
+			} else if ( EXCLIB_EXCEPTION->catching == 1 && (EXCLIB_EXCEPTION->prev == NULL) ) {
+				exclib_clear_exc_frame();
+			} else {
+			if ( exclib_new_exc_frame(EXCLIB_EXCEPTION, file, func, line) )
+				exclib_print_exception_stack((char *)&__exclib_strbuf, file, func, line);
+			if ( setflag )
+				EXCLIB_EXCEPTION->thrown = 1;
+		}
+		if ( setflag ) {
+			EXCLIB_EXCEPTION->value = value;
+			EXCLIB_EXCEPTION->name = __exclib_names[value];
+			EXCLIB_EXCEPTION->description = msg;
+		}
+		return;
     }
     sprintf((char *)&__exclib_strbuf, "Tried to THROW Exception %d but had no exception context. (Called outside of TRY block, or thrown while TRY was setting up?)", value);
     exclib_print_exception_stack((char *)&__exclib_strbuf, file, func, line);
@@ -190,14 +190,13 @@ int exclib_clear_exc_frame()
     if ( es->prev )
       es->prev->next = NULL;
     if ( es->thrown && !es->caught ) {
-	// thrown exception was unhandled - do we have anywhere else to go?
+	/* thrown exception was unhandled - do we have anywhere else to go? */
         if ( !es->prev ) {
-	  // No frame above us to propagate this into, stacktrace and kill ourselves
+	  /* No frame above us to propagate this into, stacktrace and kill ourselves */
 	  exclib_print_exception_stack("Uncaught exception", es->file, es->function, es->line);
 	  exit(es->value);
-	  //kill(getpid(), SIGKILL);
 	} else if ( es->tried && es->prev && (es->catching == 0)) {
-	  // copy this exception up into the upper frame and siglongjmp back to that
+	  /* copy this exception up into the upper frame and siglongjmp back to that */
 	  EXCLIB_EXCEPTION = es->prev;
 	  EXCLIB_EXCEPTION->caught = 0;
 	  EXCLIB_EXCEPTION->name = es->name;
@@ -216,5 +215,6 @@ int exclib_clear_exc_frame()
       }
       memset((void *)es, 0x00, sizeof(struct exclib_status));
     }
+    return 0;
 }
 
