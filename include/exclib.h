@@ -34,12 +34,16 @@
  * TRY {
  *    ... do something here ...
  *    THROW(int, "descriptive message")
- * } CATCH(int) {
- *    ... do error handling here ...
- * } DEFAULT {
- *    ... Do something with an exception here without caring about its value ...
- * } FINALLY {
- *    ... Do something here ...
+ * } CLEANUP {
+ *    ... do any cleanup from your TRY {} block here ...
+ * } EXCEPT {
+ *     } CATCH(int) {
+ *        ... do error handling here ...
+ *     } DEFAULT {
+ *        ... Do something with an exception here without caring about its value ...
+ *     } FINALLY {
+ *        ... Do something here regardless of which exception occurred, but ONLY if an exception occurred ...
+ *     }
  * } ETRY;
  *
  * The syntax is fairly obvious. Code inside the TRY block is executed, and any exceptions are propagated out to the CATCH blocks.
@@ -47,10 +51,18 @@
  * integer exception. If DEFAULT is not present and there is no CATCH block, then the exception is propagated back up the stack to the
  * first TRY() block encountered in the program. (Unhandled exceptions behave as in #5,6 in the bullet list above.)
  *
+ * DO NOT PLACE ANY CODE BETWEEN THE EXCEPT { AND THE FIRST CATCH {. IT WILL NEVER BE EXECUTED.
+ * 
+ * The CLEANUP block is optional and is executed before any exceptions are processed. Use this to clean up any resources which must be
+ * handled before the EXCEPT{} block potentially sends control out of the currrent scope, orphaning resources like file handles and
+ * memory.
+ *
  * The FINALLY clause is executed after the try block has executed, and after any applicable CATCH/DEFAULT blocks. If present, it will
  * be executed REGARDLESS of which exception was actually caught. This is useful to examine an exception as it passes through
  * without actually handling/modifying it, or to execute some generic action on exception, regardless of what type, but only after
- * specific exceptions have been handled
+ * specific exceptions have been handled. Beware, however, that FINALLY is executed AFTER CATCH blocks, therefore one of the CATCH blocks
+ * may have transferred control outside of the TRY {} statement, meaning that the FINALLY {} clause never actually gets executed.
+ * Cleaning up resources should be done in CLEANUP, not FINALLY.
  *
  * THROW_ZERO is a convenience function to replace blocks like this:
  *
@@ -79,7 +91,7 @@
  *    ...
  * } CATCH (EXC_NULLPOINTER) {
  *    ...
- * }
+ * } ETRY;
  *
  * This example also highlights one of the problems of this library : You can't check for multiple exceptions on the same block,
  * because it's all actually a hidden 'switch' statement. But you can use a mechanism like shown above; when  you have multiple
@@ -87,6 +99,14 @@
  * does not provide a break in the flow between the previous case and the current one, so fallthrough is achieved. Just make
  * sure to use a CATCH on any proceeding exceptions that don't need to fall through (like the EXC_NULLPOINTER above).
  *
+ * You MUST use TRY / EXCEPT / FINALLY / ETRY. This is the minimal form:
+ *
+ * TRY {
+ * } EXCEPT {
+ * } FINALLY {
+ * } ETRY;
+ *
+ * Without this, the generated code will be syntactically incorrect for the preprocessor.
  */
 
 #ifndef EXC_STRBUF_SIZE
@@ -95,11 +115,11 @@
 
 #ifndef EXC_MAX_FRAMES
 #define EXC_MAX_FRAMES      50
-#endif // EXC_MAX_FRAMES
+#endif /* EXC_MAX_FRAMES */
 
 #ifndef EXC_MAX_EXCEPTIONS
 #define EXC_MAX_EXCEPTIONS  4096
-#endif // EXC_MAX_EXCEPTIONS
+#endif /* EXC_MAX_EXCEPTIONS */
 
 #define TRY \
 if (__exclib_curidx >= EXC_MAX_FRAMES) \
@@ -107,7 +127,12 @@ if (__exclib_curidx >= EXC_MAX_FRAMES) \
 if ( exclib_new_exc_frame(&__exclib_statuses[__exclib_curidx++], __FILE__, (char *)__func__, __LINE__) != 0) \
     exclib_print_exception_stack("Tried to TRY but couldn't create new exception frame", __FILE__, (char *)__func__, __LINE__); \
 EXCLIB_EXCEPTION->value = setjmp(EXCLIB_EXCEPTION->buf); \
-EXCLIB_EXCEPTION->tried = 1;\
+EXCLIB_EXCEPTION->tried = 1;
+
+#define CLEANUP
+
+#define EXCEPT \
+if ( EXCLIB_EXCEPTION && EXCLIB_EXCEPTION->value ) { \
 switch( EXCLIB_EXCEPTION->value ) { \
     case 0:
 
@@ -135,13 +160,12 @@ __exclib_curidx--;
 
 #define FINALLY \
 }; \
-if ( EXCLIB_EXCEPTION && EXCLIB_EXCEPTION->value ) {
 
-#define THROW_NONZERO(x, y, z) __exclib_rc = (x); if ( __exclib_rc != 0 ) { __exclib_rc += y; THROW(__exclib_rc, z); }
-#define THROW_ZERO(x, y, z) if ( (x) == 0 ) THROW(y, z);
+#define THROW_NONZERO(x, y, z) if ( (x) != 0 ) { THROW(y, z); }
+#define THROW_ZERO(x, y, z) if ( (x) == 0 ) { THROW(y, z); }
 
 #define THROW(x, y) \
-  THROW_EXPLICIT(x, y, __FILE__, (char *)__func__, __LINE__, 1);
+  THROW_EXPLICIT(x, y, __FILE__, (char *)__func__, __LINE__, 1)
 
 #define THROW_EXPLICIT(x, y, file, func, line, setflag)	\
   exclib_prep_throw(x, y, file, func, line, setflag);				\
@@ -198,4 +222,4 @@ extern void exclib_print_exception_stack(char *mbuf, char *file, char *func, int
 extern int exclib_new_exc_frame(struct exclib_status *es, char *file, char *function, int line);
 extern int exclib_clear_exc_frame();
 
-#endif // __EXCLIB_H__
+#endif /* __EXCLIB_H__ */

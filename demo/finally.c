@@ -5,8 +5,9 @@ int main(void)
 {
   TRY {
     THROW(2, NULL);
+  } EXCEPT {
   } FINALLY {
-    printf("I am in the finally clause, and I am about to issue an unhandled exception error.\n");
+      printf("I am in the finally clause, and I am about to issue an unhandled exception error.\n");
   } ETRY;
   return 0;
 }

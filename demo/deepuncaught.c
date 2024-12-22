@@ -6,8 +6,14 @@ int main(void)
     TRY {
       TRY {
 	THROW(3, NULL);
+      } EXCEPT {
+      } FINALLY {
       } ETRY;
+    } EXCEPT {
+    } FINALLY {
     } ETRY;
+  } EXCEPT {
+  } FINALLY {
   } ETRY;
 
   return 0;
